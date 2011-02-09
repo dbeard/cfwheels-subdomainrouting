@@ -8,7 +8,7 @@
 	<cffunction name="addRoute" returntype="void" access="public" output="false" hint="Adds a new route to your application."
 		categories="configuration" chapters="using-routes" functions="">
 		<cfargument name="name" type="string" required="false" default="" hint="Name for the route. This is referenced as the `name` argument in functions based on @URLFor like @linkTo, @startFormTag, etc.">
-		<cfargument name="pattern" type="string" required="true" hint="The URL pattern that the route will match.">
+		<cfargument name="pattern" type="string" required="false" default="" hint="The URL pattern that the route will match.">
 		<cfargument name="controller" type="string" required="false" default="" hint="Controller to call when route matches (unless the controller name exists in the pattern).">
 		<cfargument name="action" type="string" required="false" default="" hint="Action to call when route matches (unless the action name exists in the pattern).">
 		<cfargument name="subdomainpattern" type="string" required="false" default="" hint="The Subdomain pattern to match">
@@ -16,9 +16,9 @@
 			var loc = {};
 
 			// throw errors when controller or action is not passed in as arguments and not included in the pattern
-			if (!Len(arguments.controller) && arguments.pattern Does Not Contain "[controller]")
+			if (!Len(arguments.controller) && arguments.pattern Does Not Contain "[controller]" && arguments.subdomainpattern Does Not Contain "[controller]")
 				$throw(type="Wheels.IncorrectArguments", message="The `controller` argument is not passed in or included in the pattern.", extendedInfo="Either pass in the `controller` argument to specifically tell Wheels which controller to call or include it in the pattern to tell Wheels to determine it dynamically on each request based on the incoming URL.");
-			if (!Len(arguments.action) && arguments.pattern Does Not Contain "[action]")
+			if (!Len(arguments.action) && arguments.pattern Does Not Contain "[action]" && arguments.subdomainpattern Does Not Contain "[action]")
 				$throw(type="Wheels.IncorrectArguments", message="The `action` argument is not passed in or included in the pattern.", extendedInfo="Either pass in the `action` argument to specifically tell Wheels which action to call or include it in the pattern to tell Wheels to determine it dynamically on each request based on the incoming URL.");
 
 			loc.thisRoute = Duplicate(arguments);
@@ -56,7 +56,7 @@
 		<cfargument name="path" type="string" required="true">
 		<cfargument name="subdomain" type="string" required="true">
 		<cfargument name="format" type="string" required="true" />
-		<cfscript>			
+		<cfscript>
 			var loc = {};
 
 			loc.iEnd = ArrayLen(application.wheels.routes);
@@ -67,19 +67,25 @@
 					loc.format = application.wheels.routes[loc.i].format;
 				loc.currentSubDomain = application.wheels.routes[loc.i].subdomainpattern;
 				loc.domainMatch = true;
+				
 				if (ListLen(arguments.subdomain, ".") gte ListLen(loc.currentSubDomain, ".") && loc.currentSubDomain != "")
 				{
 					loc.jEnd = ListLen(loc.currentSubDomain, ".");
-					for (loc.j=1; loc.j <= loc.jEnd; loc.j++)
+					loc.jDiff = ListLen(arguments.subdomain, ".") - loc.jEnd;
+					//We check going in the opposite order
+					for (loc.j=loc.jEnd; loc.j >= 1; loc.j--)
 					{
-						loc.item = ListGetAt(loc.currentRoute, loc.j, ".");
+						loc.item = ListGetAt(loc.currentSubDomain, loc.j, ".");
 						loc.thisRoute = ReplaceList(loc.item, "[,]", "");
-						loc.thisURL = ListGetAt(arguments.subdomain, loc.j, ".");
+						loc.thisURL = ListGetAt(arguments.subdomain, loc.j + loc.jDiff, ".");
 						if (Left(loc.item, 1) != "[" && loc.thisRoute != loc.thisURL){
 							loc.domainMatch = false;
 							break;
 						}
 					}
+				}
+				else if(loc.currentSubDomain != ""){
+					loc.domainMatch = false;
 				}
 				
 				if(loc.domainMatch){
@@ -178,13 +184,12 @@
 			
 			// go through the matching route pattern and add URL variables from the route to the struct
 			loc.iEnd = ListLen(arguments.route.subdomainpattern, ".");
-			trace(arguments.route.subdomainpattern);
-			trace(arguments.subdomain);
-			for (loc.i=1; loc.i <= loc.iEnd; loc.i++)
+			loc.iDiff = ListLen(arguments.subdomain, ".") - loc.iEnd;
+			for (loc.i=loc.iEnd; loc.i >= 1; loc.i--)
 			{
 				loc.item = ListGetAt(arguments.route.subdomainpattern, loc.i, ".");
 				if (Left(loc.item, 1) == "[")
-					loc.returnValue[ReplaceList(loc.item, "[,]", "")] = ListGetAt(arguments.subdomain, loc.i, ".");
+					loc.returnValue[ReplaceList(loc.item, "[,]", "")] = ListGetAt(arguments.subdomain, loc.i + loc.iDiff, ".");
 			}
 		</cfscript>
 		<cfreturn loc.returnValue>
@@ -194,9 +199,7 @@
 		<cfargument name="host" type="string" required="true">
 		<cfscript>
 			//Return everything except for host.tld
-			
 			len = ListLen(arguments.host, ".");
-			
 			if(len < 3)
 				return "";
 				
